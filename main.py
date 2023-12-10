@@ -24,13 +24,16 @@ region_name = os.environ.get('region_name')
 
 # EC2 instance parameters
 instance_type = 't2.micro'
-key_name = os.environ.get('key_name')
 ami_id = 'ami-0cd601a22ac9e6d79'
+
+key_name = os.environ.get('key_name')
 subnet_id = os.environ.get('subnet_id')
 security_group_ids=[os.environ.get('security_group_id')]
 
+# Creating the ec2 client 
 ec2 = boto3.client('ec2', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key, region_name=region_name)
 
+# Flask app
 app = Flask(__name__)
 
 @app.route('/start_lab')
@@ -49,26 +52,52 @@ def create_instance():
     # Extract the instance ID
     instance_id = response['Instances'][0]['InstanceId']
 
-    # Wait for the instance to be in the 'running' state
-    ec2.get_waiter('instance_running').wait(InstanceIds=[instance_id])
-
-    password_data = ec2.get_password_data(
-        InstanceId=instance_id,  # Replace as needed
-        DryRun=False
-    )
-    # Get public DNS of the instance
-    response = ec2.describe_instances(InstanceIds=[instance_id])
-    public_dns = response['Reservations'][0]['Instances'][0]['PublicDnsName']
-    password = decrypt_password_data(password_data, 'wind-api.pem')
-
-    return jsonify({'lab_id':instance_id,'full_address':public_dns,'password':password})
+    return jsonify({'lab_id':instance_id})
 
 @app.route('/stop_lab')
 def stop_instance():
-    id = request.args.get('lab_id')
-    response = ec2.stop_instances(InstanceIds=[id])
-    # print(response['StoppingInstances'][0]['CurrentState']['Name'])
-    return jsonify({'state':response['StoppingInstances'][0]['CurrentState']['Name']})
+    # Get instance id from the query parameter
+    inst_id = request.args.get('lab_id')
+
+    response = ec2.describe_instance_status(InstanceIds=[inst_id,],IncludeAllInstances=True)
+    if(response['InstanceStatuses'][0]['InstanceState']['Name'] == 'Running'):
+        response = ec2.terminate_instances(InstanceIds=[inst_id])
+        # print(response['StoppingInstances'][0]['CurrentState']['Name'])
+        return jsonify({'status':'success','state':response['TerminatingInstances'][0]['CurrentState']['Name']})
+    
+    return jsonify({'status':'fail'})
+
+@app.route('/lab_state')
+def check_instance_state():
+    # Get instance id from the query parameter
+    inst_id = request.args.get('lab_id')
+
+    # Describe the status of the EC2 instance
+    response = ec2.describe_instance_status(InstanceIds=[inst_id,],IncludeAllInstances=True)
+    
+    return jsonify({'state':response['InstanceStatuses'][0]['InstanceState']['Name']})
+
+@app.route('/lab_cred')
+def get_instance_detail():
+    # Get instance id from the query parameter
+    inst_id = request.args.get('lab_id')
+
+    response = ec2.describe_instance_status(InstanceIds=[inst_id,],IncludeAllInstances=True)
+    if(response['InstanceStatuses'][0]['InstanceState']['Name'] == 'Running'):
+        # Get base64 password
+        password_data = ec2.get_password_data(
+            InstanceId=inst_id,
+            DryRun=False
+        )
+        password = decrypt_password_data(password_data, 'wind-api.pem')
+        response = ec2.describe_instances(InstanceIds=[inst_id])
+
+        # Get public DNS of the instance
+        public_dns = response['Reservations'][0]['Instances'][0]['PublicDnsName']
+
+        return jsonify({'status':'success','full_addr':public_dns,'password':password})
+    
+    return jsonify({'status':'fail'})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0',port=5000)
