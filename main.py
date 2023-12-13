@@ -60,7 +60,7 @@ def stop_instance():
     inst_id = request.args.get('lab_id')
 
     response = ec2.describe_instance_status(InstanceIds=[inst_id,],IncludeAllInstances=True)
-    if(response['InstanceStatuses'][0]['InstanceState']['Name'] == 'Running'):
+    if(response['InstanceStatuses'][0]['InstanceState']['Name'] == 'running'):
         response = ec2.terminate_instances(InstanceIds=[inst_id])
         # print(response['StoppingInstances'][0]['CurrentState']['Name'])
         return jsonify({'status':'success','state':response['TerminatingInstances'][0]['CurrentState']['Name']})
@@ -83,7 +83,8 @@ def get_instance_detail():
     inst_id = request.args.get('lab_id')
 
     response = ec2.describe_instance_status(InstanceIds=[inst_id,],IncludeAllInstances=True)
-    if(response['InstanceStatuses'][0]['InstanceState']['Name'] == 'Running'):
+    print(response['InstanceStatuses'][0]['InstanceState']['Name'])
+    if(response['InstanceStatuses'][0]['InstanceState']['Name'] == 'running'):
         # Get base64 password
         password_data = ec2.get_password_data(
             InstanceId=inst_id,
